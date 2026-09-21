@@ -24,6 +24,8 @@ import org.apache.rocketmq.common.metrics.MetricsExporterType;
 import org.apache.rocketmq.controller.ControllerManager;
 import org.junit.Test;
 
+import java.lang.reflect.Field;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -31,21 +33,28 @@ import static org.mockito.Mockito.when;
 public class ControllerMetricsManagerTest {
 
     @Test
-    public void testMetricsLabelValueContainingColon() {
+    public void testMetricsConfigValuesContainingColons() throws Exception {
         ControllerConfig controllerConfig = new ControllerConfig();
         controllerConfig.setControllerDLegerGroup("group");
         controllerConfig.setControllerDLegerSelfId("n0");
         controllerConfig.setControllerDLegerPeers("n0-127.0.0.1:9878");
-        controllerConfig.setMetricsExporterType(MetricsExporterType.LOG);
+        controllerConfig.setMetricsExporterType(MetricsExporterType.OTLP_GRPC);
+        controllerConfig.setMetricsGrpcExporterTarget("http://127.0.0.1:4317");
+        controllerConfig.setMetricsGrpcExporterHeader("authorization:Bearer:token");
         controllerConfig.setMetricsLabel("endpoint:https://collector:4317");
 
         ControllerManager controllerManager = mock(ControllerManager.class);
         when(controllerManager.getControllerConfig()).thenReturn(controllerConfig);
 
-        ControllerMetricsManager.getInstance(controllerManager);
+        ControllerMetricsManager metricsManager = ControllerMetricsManager.getInstance(controllerManager);
         Attributes attributes = ControllerMetricsManager.newAttributesBuilder().build();
 
         assertThat(attributes.get(AttributeKey.stringKey("endpoint")))
             .isEqualTo("https://collector:4317");
+
+        Field metricExporterField = ControllerMetricsManager.class.getDeclaredField("metricExporter");
+        metricExporterField.setAccessible(true);
+        assertThat(metricExporterField.get(metricsManager).toString())
+            .contains("authorization=OBFUSCATED");
     }
 }

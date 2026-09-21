@@ -23,14 +23,18 @@ import org.apache.rocketmq.common.metrics.MetricsExporterType;
 import org.apache.rocketmq.proxy.config.ProxyConfig;
 import org.junit.Test;
 
+import java.lang.reflect.Field;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class ProxyMetricsManagerTest {
 
     @Test
-    public void testMetricsLabelValueContainingColon() throws Exception {
+    public void testMetricsConfigValuesContainingColons() throws Exception {
         ProxyConfig proxyConfig = new ProxyConfig();
-        proxyConfig.setMetricsExporterType(MetricsExporterType.LOG);
+        proxyConfig.setMetricsExporterType(MetricsExporterType.OTLP_GRPC);
+        proxyConfig.setMetricsGrpcExporterTarget("http://127.0.0.1:4317");
+        proxyConfig.setMetricsGrpcExporterHeader("authorization:Bearer:token");
         proxyConfig.setMetricsLabel("endpoint:https://collector:4317");
 
         ProxyMetricsManager metricsManager = ProxyMetricsManager.initClusterMode(proxyConfig);
@@ -39,6 +43,11 @@ public class ProxyMetricsManagerTest {
             Attributes attributes = ProxyMetricsManager.newAttributesBuilder().build();
             assertThat(attributes.get(AttributeKey.stringKey("endpoint")))
                 .isEqualTo("https://collector:4317");
+
+            Field metricExporterField = ProxyMetricsManager.class.getDeclaredField("metricExporter");
+            metricExporterField.setAccessible(true);
+            assertThat(metricExporterField.get(metricsManager).toString())
+                .contains("authorization=OBFUSCATED");
         } finally {
             metricsManager.shutdown();
         }
