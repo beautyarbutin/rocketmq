@@ -25,9 +25,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.rocketmq.common.BrokerConfig;
 import org.apache.rocketmq.store.DefaultMessageStore;
 import org.apache.rocketmq.store.config.MessageStoreConfig;
+import org.apache.rocketmq.store.ha.HAConnectionState;
 import org.junit.Test;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -35,6 +37,15 @@ public class AutoSwitchHAStateValidationTest {
 
     @Test
     public void testServerReaderRejectsUnknownSlaveStateOrdinal() throws Exception {
+        assertFalse(processSlaveState(Integer.MAX_VALUE));
+    }
+
+    @Test
+    public void testServerReaderAcceptsKnownSlaveStateOrdinal() throws Exception {
+        assertTrue(processSlaveState(HAConnectionState.HANDSHAKE.ordinal()));
+    }
+
+    private boolean processSlaveState(int stateOrdinal) throws Exception {
         AutoSwitchHAService haService = mock(AutoSwitchHAService.class);
         DefaultMessageStore messageStore = mock(DefaultMessageStore.class);
         when(haService.getConnectionCount()).thenReturn(new AtomicInteger());
@@ -53,11 +64,13 @@ public class AutoSwitchHAStateValidationTest {
                 try {
                     AutoSwitchHAConnection.ReadSocketService readSocketService = getReadSocketService(connection);
                     AutoSwitchHAConnection.ReadSocketService.HAServerReader reader = readSocketService.new HAServerReader();
-                    ByteBuffer frame = ByteBuffer.allocate(AutoSwitchHAClient.MIN_HEADER_SIZE);
-                    frame.putInt(Integer.MAX_VALUE);
-                    frame.position(AutoSwitchHAClient.MIN_HEADER_SIZE);
+                    ByteBuffer frame = ByteBuffer.allocate(AutoSwitchHAClient.HANDSHAKE_HEADER_SIZE);
+                    frame.putInt(stateOrdinal);
+                    frame.putShort((short) 0);
+                    frame.putShort((short) 0);
+                    frame.putLong(1L);
 
-                    assertFalse(reader.processReadResult(frame));
+                    return reader.processReadResult(frame);
                 } finally {
                     connection.shutdown();
                 }
@@ -67,6 +80,18 @@ public class AutoSwitchHAStateValidationTest {
 
     @Test
     public void testClientReaderRejectsUnknownMasterStateOrdinal() throws Exception {
+        assertFalse(processMasterState(Integer.MAX_VALUE, AutoSwitchHAConnection.HANDSHAKE_HEADER_SIZE));
+    }
+
+    @Test
+    public void testClientReaderHandlesKnownMasterStateOrdinals() throws Exception {
+        assertFalse(processMasterState(
+            HAConnectionState.HANDSHAKE.ordinal(), AutoSwitchHAConnection.HANDSHAKE_HEADER_SIZE));
+        assertFalse(processMasterState(
+            HAConnectionState.TRANSFER.ordinal(), AutoSwitchHAConnection.TRANSFER_HEADER_SIZE));
+    }
+
+    private boolean processMasterState(int stateOrdinal, int headerSize) throws Exception {
         AutoSwitchHAService haService = mock(AutoSwitchHAService.class);
         DefaultMessageStore messageStore = mock(DefaultMessageStore.class);
         when(haService.getDefaultMessageStore()).thenReturn(messageStore);
@@ -75,13 +100,17 @@ public class AutoSwitchHAStateValidationTest {
         AutoSwitchHAClient client = new AutoSwitchHAClient(
             haService, messageStore, mock(EpochFileCache.class), 1L);
         try {
-            ByteBuffer frame = ByteBuffer.allocate(AutoSwitchHAConnection.HANDSHAKE_HEADER_SIZE);
-            frame.putInt(Integer.MAX_VALUE);
+            ByteBuffer frame = ByteBuffer.allocate(headerSize);
+            frame.putInt(stateOrdinal);
             frame.putInt(0);
             frame.putLong(0);
             frame.putInt(0);
+            if (headerSize == AutoSwitchHAConnection.TRANSFER_HEADER_SIZE) {
+                frame.putLong(0);
+                frame.putLong(0);
+            }
 
-            assertFalse(client.new HAClientReader().processReadResult(frame));
+            return client.new HAClientReader().processReadResult(frame);
         } finally {
             client.shutdown();
         }
