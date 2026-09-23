@@ -97,4 +97,19 @@ public class TopicConfigTest {
             assertThat(topicConfig).isEqualTo(original);
         }
     }
+
+    @Test
+    public void testDecodeIgnoresMalformedAttributes() {
+        TopicConfig topicConfig = new TopicConfig();
+        topicConfig.setTopicMessageType(TopicMessageType.FIFO);
+
+        boolean decoded = topicConfig.decode("changed 4 5 6 MULTI_TAG {");
+
+        assertThat(decoded).isTrue();
+        assertThat(topicConfig.getTopicName()).isEqualTo("changed");
+        assertThat(topicConfig.getReadQueueNums()).isEqualTo(4);
+        assertThat(topicConfig.getWriteQueueNums()).isEqualTo(5);
+        assertThat(topicConfig.getTopicFilterType()).isEqualTo(TopicFilterType.MULTI_TAG);
+        assertThat(topicConfig.getTopicMessageType()).isEqualTo(TopicMessageType.FIFO);
+    }
 }
