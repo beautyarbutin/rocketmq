@@ -75,4 +75,26 @@ public class TopicConfigTest {
 
         assertThat(decodeTopicConfig).isEqualTo(topicConfig);
     }
+
+    @Test
+    public void testDecodeMalformedConfigDoesNotMutateState() {
+        String[] malformedConfigs = {
+            "changed 8 8 6",
+            "changed invalid 8 6 SINGLE_TAG",
+            "changed 8 invalid 6 SINGLE_TAG",
+            "changed 8 8 invalid SINGLE_TAG",
+            "changed 8 8 6 INVALID_FILTER_TYPE"
+        };
+
+        for (String malformedConfig : malformedConfigs) {
+            TopicConfig topicConfig = new TopicConfig("original", 4, 5, perm, 7);
+            topicConfig.setTopicFilterType(TopicFilterType.MULTI_TAG);
+            topicConfig.setOrder(true);
+            topicConfig.setTopicMessageType(TopicMessageType.FIFO);
+            TopicConfig original = new TopicConfig(topicConfig);
+
+            assertThat(topicConfig.decode(malformedConfig)).isFalse();
+            assertThat(topicConfig).isEqualTo(original);
+        }
+    }
 }
